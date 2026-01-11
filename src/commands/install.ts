@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync, existsSync, mkdirSync, rmSync, cpSync, statSync } from 'fs';
-import { join, basename, resolve } from 'path';
+import { join, basename, resolve, sep, relative, isAbsolute } from 'path';
 import { homedir } from 'os';
 import { execSync } from 'child_process';
 import chalk from 'chalk';
@@ -18,7 +18,10 @@ function isLocalPath(source: string): boolean {
     source.startsWith('/') ||
     source.startsWith('./') ||
     source.startsWith('../') ||
-    source.startsWith('~/')
+    source.startsWith('~/') ||
+    source.startsWith('.\\') ||
+    source.startsWith('..\\') ||
+    isAbsolute(source) // Handles Windows absolute paths like C:\, D:\, etc.
   );
 }
 
@@ -43,6 +46,18 @@ function expandPath(source: string): string {
     return join(homedir(), source.slice(2));
   }
   return resolve(source);
+}
+
+/**
+ * Check if targetPath is safely within parentDir (cross-platform)
+ */
+function isPathWithinDirectory(targetPath: string, parentDir: string): boolean {
+  const resolvedTarget = resolve(targetPath);
+  const resolvedParent = resolve(parentDir);
+  // Use path.relative to check if target is within parent
+  const relativePath = relative(resolvedParent, resolvedTarget);
+  // If relative path starts with '..' or is absolute, it's outside the parent
+  return !relativePath.startsWith('..') && !isAbsolute(relativePath);
 }
 
 /**
@@ -192,9 +207,7 @@ async function installSingleLocalSkill(
 
   mkdirSync(targetDir, { recursive: true });
   // Security: ensure target path stays within target directory
-  const resolvedTargetPath = resolve(targetPath);
-  const resolvedTargetDir = resolve(targetDir);
-  if (!resolvedTargetPath.startsWith(resolvedTargetDir + '/')) {
+  if (!isPathWithinDirectory(targetPath, targetDir)) {
     console.error(chalk.red(`Security error: Installation path outside target directory`));
     process.exit(1);
   }
@@ -242,9 +255,7 @@ async function installSpecificSkill(
 
   mkdirSync(targetDir, { recursive: true });
   // Security: ensure target path stays within target directory
-  const resolvedTargetPath = resolve(targetPath);
-  const resolvedTargetDir = resolve(targetDir);
-  if (!resolvedTargetPath.startsWith(resolvedTargetDir + '/')) {
+  if (!isPathWithinDirectory(targetPath, targetDir)) {
     console.error(chalk.red(`Security error: Installation path outside target directory`));
     process.exit(1);
   }
@@ -368,9 +379,7 @@ async function installFromRepo(
 
     mkdirSync(targetDir, { recursive: true });
     // Security: ensure target path stays within target directory
-    const resolvedTargetPath = resolve(info.targetPath);
-    const resolvedTargetDir = resolve(targetDir);
-    if (!resolvedTargetPath.startsWith(resolvedTargetDir + '/')) {
+    if (!isPathWithinDirectory(info.targetPath, targetDir)) {
       console.error(chalk.red(`Security error: Installation path outside target directory`));
       continue;
     }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolve, join } from 'path';
+import { resolve, join, relative, isAbsolute, sep } from 'path';
 import { homedir } from 'os';
 
 // We need to test the helper functions, but they're not exported
@@ -8,13 +8,16 @@ import { homedir } from 'os';
 
 describe('install.ts helper functions', () => {
   describe('isLocalPath detection', () => {
-    // Replicate the logic from isLocalPath()
+    // Replicate the logic from isLocalPath() - cross-platform version
     const isLocalPath = (source: string): boolean => {
       return (
         source.startsWith('/') ||
         source.startsWith('./') ||
         source.startsWith('../') ||
-        source.startsWith('~/')
+        source.startsWith('~/') ||
+        source.startsWith('.\\') ||
+        source.startsWith('..\\') ||
+        isAbsolute(source) // Handles Windows absolute paths like C:\, D:\, etc.
       );
     };
 
@@ -131,37 +134,50 @@ describe('install.ts helper functions', () => {
 
     it('should keep absolute paths as-is (resolved)', () => {
       const expanded = expandPath('/absolute/path');
-      expect(expanded).toBe('/absolute/path');
+      // On Windows, /absolute/path resolves to current drive (e.g., G:\absolute\path)
+      // On Unix, it stays as /absolute/path
+      expect(expanded).toBe(resolve('/absolute/path'));
     });
   });
 
   describe('path traversal security', () => {
-    // Test the security check logic
+    // Test the security check logic - cross-platform version using path.relative
     const isPathSafe = (targetPath: string, targetDir: string): boolean => {
-      const resolvedTargetPath = resolve(targetPath);
-      const resolvedTargetDir = resolve(targetDir);
-      return resolvedTargetPath.startsWith(resolvedTargetDir + '/');
+      const resolvedTarget = resolve(targetPath);
+      const resolvedParent = resolve(targetDir);
+      // Use path.relative to check if target is within parent
+      const relativePath = relative(resolvedParent, resolvedTarget);
+      // If relative path starts with '..' or is absolute, it's outside the parent
+      return !relativePath.startsWith('..') && !isAbsolute(relativePath);
     };
 
+    // Use join() to create cross-platform test paths
+    const testBaseDir = join(sep, 'home', 'user', '.claude', 'skills');
+    const testSkillPath = join(testBaseDir, 'my-skill');
+    const testNestedPath = join(testBaseDir, 'category', 'my-skill');
+    const testTraversalPath = join(testBaseDir, '..', '..', '..', 'etc', 'passwd');
+    const testOutsidePath = join(sep, 'etc', 'passwd');
+    const testPrefixPath = join(sep, 'home', 'user', '.claude', 'skills-evil');
+
     it('should allow normal skill paths within target directory', () => {
-      expect(isPathSafe('/home/user/.claude/skills/my-skill', '/home/user/.claude/skills')).toBe(true);
+      expect(isPathSafe(testSkillPath, testBaseDir)).toBe(true);
     });
 
     it('should block path traversal attempts with ../', () => {
-      expect(isPathSafe('/home/user/.claude/skills/../../../etc/passwd', '/home/user/.claude/skills')).toBe(false);
+      expect(isPathSafe(testTraversalPath, testBaseDir)).toBe(false);
     });
 
     it('should block paths outside target directory', () => {
-      expect(isPathSafe('/etc/passwd', '/home/user/.claude/skills')).toBe(false);
+      expect(isPathSafe(testOutsidePath, testBaseDir)).toBe(false);
     });
 
     it('should block paths that are prefix but not subdirectory', () => {
       // /home/user/.claude/skills-evil should NOT be allowed when target is /home/user/.claude/skills
-      expect(isPathSafe('/home/user/.claude/skills-evil', '/home/user/.claude/skills')).toBe(false);
+      expect(isPathSafe(testPrefixPath, testBaseDir)).toBe(false);
     });
 
     it('should allow nested subdirectories', () => {
-      expect(isPathSafe('/home/user/.claude/skills/category/my-skill', '/home/user/.claude/skills')).toBe(true);
+      expect(isPathSafe(testNestedPath, testBaseDir)).toBe(true);
     });
   });
 });

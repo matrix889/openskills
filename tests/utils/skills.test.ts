@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdirSync, writeFileSync, symlinkSync, rmSync, existsSync } from 'fs';
-import { join } from 'path';
+import { join, sep } from 'path';
 import { tmpdir } from 'os';
 import { findAllSkills, findSkill } from '../../src/utils/skills.js';
 import * as dirsModule from '../../src/utils/dirs.js';
@@ -181,7 +181,7 @@ describe('skills.ts', () => {
       const skill = findSkill('my-skill');
 
       expect(skill).not.toBeNull();
-      expect(skill?.path).toContain('my-skill/SKILL.md');
+      expect(skill?.path).toContain(`my-skill${sep}SKILL.md`);
       expect(skill?.baseDir).toContain('my-skill');
     });
 
@@ -191,7 +191,7 @@ describe('skills.ts', () => {
       const skill = findSkill('linked-skill');
 
       expect(skill).not.toBeNull();
-      expect(skill?.path).toContain('linked-skill/SKILL.md');
+      expect(skill?.path).toContain(`linked-skill${sep}SKILL.md`);
     });
 
     it('should return null for non-existent skill', () => {
